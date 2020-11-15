@@ -1,61 +1,83 @@
-require('./main.css');
-
 /*global ymaps*/
 
 const container = document.querySelector('#map');
-const interactiveMap = require('./js/interactiveMap');
-const events = require('./js/events')
+const interactiveMap = require('./js/interactiveMap.js');
+const events = require('./js/events.js')
+const api = require('./js/api.js');
 
-//Создаем карту
+//Карта
 ymaps.ready(async () => {
-  const coords = await interactiveMap.geoLocation();
 
-  ymaps.map = new ymaps.Map(container, {
-    center: coords,
-    zoom: 12,
-    controls: ['zoomControl'],
-    behaviors: ['drag'],
+  const customBalloonTemplate = document.getElementById('customBalloonTemplate').innerHTML;
+  const customClustererItemLayout = document.getElementById('customClustererItemLayout').innerHTML;
+
+  const balloonTemplate = ymaps.templateLayoutFactory.createClass(customBalloonTemplate, {
+    build: function () {
+      this.constructor.superclass.build.call(this);
+      this._$element = $('.popover', this.getParentElement());
+      this.applyElementOffset();
+      this._$element.find('.close').on('click', $.proxy(this.onCloseClick, this));
+    },
+    clear: function () {
+      this._$element.find('.close').off('click');
+      this.constructor.superclass.clear.call(this);
+    },
+    onSublayoutSizeChange: function () {
+      balloonTemplate.superclass.onSublayoutSizeChange.apply(this, arguments);
+
+      if (!this._isElement(this._$element)) {
+        return;
+      }
+
+      this.applyElementOffset();
+      this.events.fire('shapechange');
+    },
+    applyElementOffset: function () {
+      this._$element.css({
+        left: -(this._$element[0].offsetWidth / 2),
+        top: -(this._$element[0].offsetHeight + this._$element.find('.arrow')[0].offsetHeight)
+      });
+    },
+    onCloseClick: function (e) {
+      e.preventDefault();
+
+      this.events.fire('userclose');
+    },
+    getShape: function () {
+      if (!this._isElement(this._$element)) {
+        return MyBalloonLayout.superclass.getShape.call(this);
+      }
+
+      var position = this._$element.position();
+
+      return new ymaps.shape.Rectangle(new ymaps.geometry.pixel.Rectangle([
+        [position.left, position.top], [
+          position.left + this._$element[0].offsetWidth,
+          position.top + this._$element[0].offsetHeight + this._$element.find('.arrow')[0].offsetHeight
+        ]
+      ]));
+    },
+    _isElement: function (element) {
+      return element && element[0] && element.find('.arrow')[0];
+    }
   });
 
-  events.click()
+
+  const clustererItemLayout = ymaps.templateLayoutFactory.createClass(customClustererItemLayout);
+
+  ymaps.layout.storage.add('my#customBalloonLayout', balloonTemplate);
+  ymaps.layout.storage.add('my#clustererItemLayout', clustererItemLayout);
+
+  try {
+    const coords = await interactiveMap.geoLocation();
+    const placemarks = await api.getPlacmarks();
+
+    interactiveMap.map(coords, container);
+    interactiveMap.clusterer();
+    interactiveMap.createPlacemarks(placemarks)
+
+    events.click();
+  } catch (error) {
+    console.log(error);
+  }
 });
-
-//Создаем кластеризатор
-// const clusterer = new ymaps.Clusterer({
-//   groupByCoordinates: true,
-//   clusterDisableClickZoom: true,
-//   clusterOpenBalloonOnClick: false,
-// });
-// clusterer.events.add('click', function (e) {
-//   const coords = e.get('target').geometry.getCoordinates();
-//   this.onClick(coords);
-// });
-
-// Обработка события, возникающего при щелчке левой кнопкой мыши в любой точке карты.
-// При возникновении такого события откроем балун.
-// myMap.events.add('click', function (e) {
-//   if (!myMap.balloon.isOpen()) {
-//     const coords = e.get('coords');
-//     myMap.balloon.open(coords, {
-//       contentHeader: 'Отзыв:',
-//       contentBody:
-//         '<input style = "margin-bottom: 10px;"  type="text" placeholder="Укажите Ваше имя"></input><br><input style = "margin-bottom: 10px;" type="text" placeholder="Укажите место"></input><br><textarea style = "margin-bottom: 13px;" placeholder="Оставьте отзыв"></textarea>',
-//       contentFooter: '<button>Добавить</button>',
-//     });
-//   } else {
-//     myMap.balloon.close();
-//   }
-// });
-
-// // Скрываем хинт при открытии балуна.
-// myMap.events.add('balloonopen', function (e) {
-//   myMap.hint.close();
-// });
-
-// //Плейсмарк
-// const placemark = new ymaps.Placemark(coords);
-// placemark.events.add('click', (e) => {
-//   const coords = e.get('target').geometry.getCoordinates();
-//   this.onClick(coords);
-// });
-// this.clusterer.add(placemark);
